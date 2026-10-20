@@ -6,53 +6,60 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout Kernel Source (v2.4 Tag)
+      - name: Checkout Source Base
         uses: actions/checkout@v4
         with:
           ref: 'v2.4'
           submodules: 'recursive'
           fetch-depth: 1
 
-      - name: Install Build Dependencies
+      - name: Install Tool Packages
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache flex libelf-dev libssl-dev libncurses-dev git-core zip clang
 
-      - name: Setup Toolchain (Clang)
+      - name: Download Compiler Files
         run: |
           mkdir -p $GITHUB_WORKSPACE/toolchain
           cd $GITHUB_WORKSPACE/toolchain
-          curl -LO https://googlesource.com
+          HOST="://googlesource.com"
+          TARGET="platform/prebuilts/clang/host/linux-x86"
+          FILE="clang-r522817.tar.gz"
+          curl -LO "https://$HOST/$TARGET/+archive/refs/heads/main/$FILE"
           tar -xzf clang-r522817.tar.gz
 
-      - name: Inject KernelSU-Next v3.4.2
-        run: |
-          cd $GITHUB_WORKSPACE
-          rm -rf drivers/kernelsu
-          git clone --branch v3.4.2 --recursive https://github.com drivers/kernelsu
+      - name: Checkout KSUN Core Component
+        uses: actions/checkout@v4
+        with:
+          repository: 'KernelSU-Next/KernelSU-Next'
+          ref: 'v3.4.2'
+          path: 'drivers/kernelsu'
+          submodules: 'recursive'
 
-      - name: Compile Kernel
+      - name: Compile Custom Kernel Image
         run: |
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CC=clang
-          
           make O=out peridot_defconfig
           make -j$(nproc) O=out
 
-      - name: Package into AnyKernel3 Zip
+      - name: Checkout Packaging Engine
+        uses: actions/checkout@v4
+        with:
+          repository: 'osm0sis/AnyKernel3'
+          path: 'AnyKernel3'
+
+      - name: Build Flashable Archive Package
         run: |
-          cd $GITHUB_WORKSPACE
-          git clone https://github.com $GITHUB_WORKSPACE/AnyKernel3
-          cp out/arch/arm64/boot/Image $GITHUB_WORKSPACE/AnyKernel3/
-          cd $GITHUB_WORKSPACE/AnyKernel3
+          cp out/arch/arm64/boot/Image AnyKernel3/
+          cd AnyKernel3
           zip -r9 ../Theettam-v2.4-KSUN-3.4.2.zip *
 
-      - name: Upload Artifact
+      - name: Deploy Final Output Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Theettam-v2.4-Custom-Zip
           path: Theettam-v2.4-KSUN-3.4.2.zip
-          
